@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<coreProperties xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://schemas.openxmlformats.org/package/2006/metadata/core-properties">
+  <dc:creator>Jordan Borean</dc:creator>
+  <dc:description>TOML parser and writer for PowerShell</dc:description>
+  <dc:identifier>PSToml</dc:identifier>
+  <version>0.5.0</version>
+  <keywords>PSModule TOML PSEdition_Core</keywords>
+  <lastModifiedBy>NuGet.Packaging, Version=6.9.1.3, Culture=neutral, PublicKeyToken=31bf3856ad364e35;Unix 6.17.0.1008;.NET Framework 4.7.2</lastModifiedBy>
+</coreProperties>

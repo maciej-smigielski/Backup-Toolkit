@@ -1,0 +1,4 @@
+[dwd]
+type = http
+url = https://opendata.dwd.de/
+

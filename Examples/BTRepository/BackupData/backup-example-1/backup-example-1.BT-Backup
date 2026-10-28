@@ -1,0 +1,62 @@
+﻿# BT-Backup example configuration file in TOML format
+# See Docs/BT-Backup.md for the full specification of every key below.
+# See Docs/Glossary.md for definitions of terms marked in **bold** in the comments.
+# NOTE: paths with backslashes must use single quotes ('...'); TOML treats \ inside "..." as an escape.
+# NOTE: all paths in this example are relative to the **BackupToolkitHome** root.
+
+[bt-backup]
+# **Backup** name; must match the base name of this file and the **BackupHome** folder that contains it.
+backup_name = "backup-example-1"
+# Parent **BackupData** folder that holds <backup_name>/ (this **BackupHome**). Safety check against moved layouts;
+# also the default local destination for a **Colocated Backup** (empty [destination]).
+backup_data = 'Examples\BTRepository\BackupData'
+
+[source]
+# **Rclone** remote name (e.g. "onedrive"). Empty string = local source.
+source_system = ""
+# Source path — local path, or path under source_system when the source is remote.
+source_path = 'Examples\Source'
+# true = use sibling <backup_name>**.BT-Filter** as rclone --filter-from. Default: false.
+source_filter = true
+# true = add --track-renames --track-renames-strategy hash so rclone follows renames instead of re-copying. Default: false.
+source_renames = true
+# true = add --iclouddrive-service photos (only for iCloud Photo Library backups). Default: false.
+#source_iphotos = false
+
+[destination]
+# **Rclone** remote for the destination. Empty = local. Both destination_system and destination_storage empty
+# => **Colocated Backup** written to <backup_data>/<backup_name>/. Otherwise => **Split Backup**.
+#destination_system = ""
+# Destination storage root; must contain <backup_name>/current/ and <backup_name>/archive/.
+#destination_storage = ""
+# Only interpreted for a remote destination (destination_system is set, i.e. destination is not local):
+# true = forward slashes in rclone paths, false = backslashes. Default: true.
+#destination_posix = true
+# true = add --fix-case so rclone renames destination entries whose case does not match the source. Default: true.
+#destination_fc = true
+# true = add --create-empty-src-dirs so rclone recreates empty source directories on the destination. Default: true.
+#destination_cesd = true
+# true = add --delete-excluded so rclone removes destination files excluded by the current filter rules. Default: true.
+destination_de = false
+
+[rclone]
+# **Rclone** executable to invoke; empty/omitted = use the bundled Tools/Utilities/Rclone/rclone.exe.
+#rclone_prog = ""
+# **Rclone** config file passed as --config (a **.BT-Rclone-Config** or a plain rclone.conf); omitted = rclone default.
+rclone_config = 'Examples\BTRepository\Config\example-rclone.BT-Rclone-Config'
+# Path to a **.BT-File-Credentials** file with the password for rclone_config.
+#rclone_credentials = ""
+
+[mail]
+# Recipient(s); one address or several separated by ';'. Empty entries are ignored.
+#mail_to = ""
+# Path to a **.BT-Mail-Credentials** file (DPAPI-protected SMTP credentials for the current user).
+#mail_credentials = ""
+# true = attach a ZIP with the **Session** log and the rclone log to the report mail. Default: false.
+#mail_attach_log = true
+
+[runtime]
+# Parent folder for the per-**Session** temp dir and rclone --temp-dir / --cache-dir. Defaults to %TEMP%.
+temp_path = '%USERPROFILE%\AppData\Local\Temp'
+# Folder where the **Session** **Lock** file BT-Backup_<backup_name>.lock is created. Defaults to this **BackupHome**.
+lock_path = 'Examples\BTRepository\Locks'

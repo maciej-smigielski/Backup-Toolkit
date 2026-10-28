@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
+  <metadata>
+    <id>PSToml</id>
+    <version>0.5.0</version>
+    <authors>Jordan Borean</authors>
+    <owners>Community</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <licenseUrl>https://github.com/jborean93/PSToml/blob/main/LICENSE</licenseUrl>
+    <projectUrl>https://github.com/jborean93/PSToml</projectUrl>
+    <description>TOML parser and writer for PowerShell</description>
+    <releaseNotes>See https://github.com/jborean93/PSToml/blob/main/CHANGELOG.md</releaseNotes>
+    <copyright>(c) 2023 Jordan Borean. All rights reserved.</copyright>
+    <tags>PSModule TOML PSEdition_Core</tags>
+  </metadata>
+</package>

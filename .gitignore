@@ -1,0 +1,66 @@
+# .gitignore for Backup-Toolkit
+
+# ignore local configuration data; keep the Config README
+/Config/
+!/Config/
+/Config/*
+!/Config/README.md
+
+# ignore local test content; keep the Tests README
+/Tests/
+!/Tests/
+/Tests/*
+!/Tests/README.md
+
+# ignore local working files; keep the Work README
+/Work/
+!/Work/
+/Work/*
+!/Work/README.md
+
+# ignore the downloaded rclone distribution; keep its directory placeholder
+/Tools/Utilities/Rclone/*
+!/Tools/Utilities/Rclone/.gitkeep
+
+# ignore local example inputs; keep the source directory placeholder
+/Examples/Source/*
+!/Examples/Source/.gitkeep
+# ignore generated repository data and local config; keep directory placeholders
+/Examples/BTRepository/BackupData/backup-example-1/archive/*
+!/Examples/BTRepository/BackupData/backup-example-1/archive/.gitkeep
+/Examples/BTRepository/BackupData/backup-example-1/current/*
+!/Examples/BTRepository/BackupData/backup-example-1/current/.gitkeep
+/Examples/BTRepository/BackupData/backup-example-1/logs/*
+!/Examples/BTRepository/BackupData/backup-example-1/logs/.gitkeep
+/Examples/BTStorage/backup-example-2/archive/*
+!/Examples/BTStorage/backup-example-2/archive/.gitkeep
+/Examples/BTStorage/backup-example-2/current/*
+!/Examples/BTStorage/backup-example-2/current/.gitkeep
+/Examples/BTRepository/BackupData/backup-example-2/logs/*
+!/Examples/BTRepository/BackupData/backup-example-2/logs/.gitkeep
+/Examples/BTRepository/BackupData/backup-example-3/archive/*
+!/Examples/BTRepository/BackupData/backup-example-3/archive/.gitkeep
+/Examples/BTRepository/BackupData/backup-example-3/current/*
+!/Examples/BTRepository/BackupData/backup-example-3/current/.gitkeep
+/Examples/BTRepository/BackupData/backup-example-3/logs/*
+!/Examples/BTRepository/BackupData/backup-example-3/logs/.gitkeep
+/Examples/BTStorage/backup-example-4/archive/*
+!/Examples/BTStorage/backup-example-4/archive/.gitkeep
+/Examples/BTStorage/backup-example-4/current/*
+!/Examples/BTStorage/backup-example-4/current/.gitkeep
+/Examples/BTRepository/BackupData/backup-example-4/logs/*
+!/Examples/BTRepository/BackupData/backup-example-4/logs/.gitkeep
+/Examples/BTRepository/BackupPlans/logs/*
+!/Examples/BTRepository/BackupPlans/logs/.gitkeep
+/Examples/BTRepository/BackupSystem/logs/*
+!/Examples/BTRepository/BackupSystem/logs/.gitkeep
+/Examples/BTRepository/Temp/*
+!/Examples/BTRepository/Temp/.gitkeep
+/Examples/BTRepository/Locks/*
+!/Examples/BTRepository/Locks/.gitkeep
+
+# optional local environment overrides
+#/.env
+
+# optional local Visual Studio Code settings
+#/.vscode

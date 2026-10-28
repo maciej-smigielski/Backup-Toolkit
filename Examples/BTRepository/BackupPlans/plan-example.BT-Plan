@@ -1,0 +1,71 @@
+﻿# BT-Plan example configuration file in TOML format.
+# See Docs/BT-Plan.md for the full specification of every key below.
+# See Docs/Glossary.md for definitions of terms marked in **bold** in the comments.
+# NOTE: paths with backslashes must use single quotes ('...'); TOML treats \ inside "..." as an escape.
+# NOTE: all paths in this example are relative to the Backup-Toolkit home directory.
+
+[bt-plan]
+# Plan name; must match the base name of this file.
+plan_name = "plan-example"
+
+[mail]
+# Recipient address, or a list separated by ';'. Empty entries are ignored. Default: not set.
+#mail_to = ""
+# Path to a `.BT-Mail-Credentials` file containing DPAPI-protected SMTP credentials for the current user. Default: not set.
+#mail_credentials = ""
+# true = attach a ZIP containing the plan log and each job's BT-Backup and rclone logs. Default: false.
+#mail_attach_log = true
+
+[runtime]
+# Parent folder for the per-session temp directory. Defaults to %TEMP%.
+temp_path = '%USERPROFILE%\AppData\Local\Temp'
+# Folder where the session lock file `BT-Plan_<plan_name>.lock` is created. Defaults to the folder containing this plan file.
+lock_path = 'Examples\BTRepository\Locks'
+
+[job_defaults]
+# Default BackupData folder for jobs that do not specify their own. Paths are relative to the Backup-Toolkit home directory.
+backup_data = 'Examples\BTRepository\BackupData'
+# Days when jobs run: digits 1-7 represent Monday-Sunday. Default: no days scheduled. This example schedules jobs every day.
+run_days = "1234567"
+# true = suppress the email report from each BT-Backup job. false = allow each job's own mail settings to apply. Default: false.
+#skip_mail = true
+
+[[jobs]]
+# Name of the Backup; selects <backup_data>/<backup_name>/<backup_name>.BT-Backup.
+backup_name = "backup-example-1"
+# Optional BackupData folder override for this job. Default: job_defaults.backup_data.
+#backup_data = ""
+# Optional scheduled days override; digits 1-7 represent Monday-Sunday. Default: job_defaults.run_days.
+#run_days = ""
+# true = suppress this job's BT-Backup email report. Default: job_defaults.skip_mail.
+#skip_mail = true
+
+[[jobs]]
+# Name of the Backup; selects <backup_data>/<backup_name>/<backup_name>.BT-Backup.
+backup_name = "backup-example-2"
+# Optional BackupData folder override for this job. Default: job_defaults.backup_data.
+#backup_data = ""
+# Optional scheduled days override; digits 1-7 represent Monday-Sunday. Default: job_defaults.run_days.
+run_days = ""
+# true = suppress this job's BT-Backup email report. Default: job_defaults.skip_mail.
+#skip_mail = true
+
+[[jobs]]
+# Name of the Backup; selects <backup_data>/<backup_name>/<backup_name>.BT-Backup.
+backup_name = "backup-example-3"
+# Optional BackupData folder override for this job. Default: job_defaults.backup_data.
+#backup_data = ""
+# Optional scheduled days override; digits 1-7 represent Monday-Sunday. Default: job_defaults.run_days.
+#run_days = ""
+# true = suppress this job's BT-Backup email report. Default: job_defaults.skip_mail.
+#skip_mail = true
+
+[[jobs]]
+# Name of the Backup; selects <backup_data>/<backup_name>/<backup_name>.BT-Backup.
+backup_name = "backup-example-4"
+# Optional BackupData folder override for this job. Default: job_defaults.backup_data.
+#backup_data = ""
+# Optional scheduled days override; digits 1-7 represent Monday-Sunday. Default: job_defaults.run_days.
+run_days = ""
+# true = suppress this job's BT-Backup email report. Default: job_defaults.skip_mail.
+#skip_mail = true
