@@ -3,7 +3,7 @@
 REM -------------------------------
 REM NAME: BT-Plan.cmd
 REM AUTHOR: Maciej-Smigielski
-REM VERSION: 26.11.01.0
+REM VERSION: 26.11.01.1
 REM -------------------------------
 
 call powershell -ExecutionPolicy Bypass -File "%~dpn0.ps1" %*

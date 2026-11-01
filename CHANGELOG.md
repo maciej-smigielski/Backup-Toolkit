@@ -4,7 +4,11 @@ Notable user-facing changes for each release. Unreleased entries summarize chang
 
 ## Unreleased
 
-No unreleased changes.
+- No unreleased changes.
+
+## v26.11.01.1
+
+- **Documentation:** Prepared the main README for publication on the [public Backup-Toolkit project site](https://maciej-smigielski.github.io/Backup-Toolkit/).
 
 ## v26.11.01.0
 

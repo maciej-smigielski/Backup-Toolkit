@@ -68,6 +68,7 @@ For a complete documentation overview, see the [Documentation index](Docs/README
 
 ## Release History
 
+- [Latest release](https://github.com/maciej-smigielski/Backup-Toolkit-Dev/releases/latest)
 - [Changelog](CHANGELOG.md)
 
 ## Requirements
@@ -94,3 +95,7 @@ It permits use and modification for your and your company's internal business
 operations, but does not permit distribution. This is a source-available license,
 not an open-source license. See [Licensing](LICENSING.md) for scope, restrictions,
 and third-party license information.
+
+## Project Repository
+
+Visit the [Backup-Toolkit repository on GitHub](https://github.com/maciej-smigielski/Backup-Toolkit-Dev) for the source code, project history, and releases.

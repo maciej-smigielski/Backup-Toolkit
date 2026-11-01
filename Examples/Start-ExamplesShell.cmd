@@ -3,7 +3,7 @@
 REM -------------------------------
 REM NAME: Start-ExamplesShell.cmd
 REM AUTHOR: Maciej-Smigielski
-REM VERSION: 26.11.01.0
+REM VERSION: 26.11.01.1
 REM -------------------------------
 
 setlocal

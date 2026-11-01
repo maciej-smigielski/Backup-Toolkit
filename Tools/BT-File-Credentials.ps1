@@ -34,7 +34,7 @@ param(
 try {
 
 # Wersja skryptu
-$ScriptVersion = "26.11.01.0"
+$ScriptVersion = "26.11.01.1"
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
