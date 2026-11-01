@@ -68,7 +68,7 @@ For a complete documentation overview, see the [Documentation index](Docs/README
 
 ## Release History
 
-- [Latest release](https://github.com/maciej-smigielski/Backup-Toolkit-Dev/releases/latest)
+- [Latest release](https://github.com/maciej-smigielski/Backup-Toolkit/releases/latest)
 - [Changelog](CHANGELOG.md)
 
 ## Requirements
@@ -98,4 +98,4 @@ and third-party license information.
 
 ## Project Repository
 
-Visit the [Backup-Toolkit repository on GitHub](https://github.com/maciej-smigielski/Backup-Toolkit-Dev) for the source code, project history, and releases.
+Visit the [Backup-Toolkit repository on GitHub](https://github.com/maciej-smigielski/Backup-Toolkit) for the source code, project history, and releases.

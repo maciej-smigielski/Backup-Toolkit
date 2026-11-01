@@ -4,7 +4,7 @@ setlocal enabledelayedexpansion
 REM -------------------------------
 REM NAME: BT-Shutdown.cmd
 REM AUTHOR: Maciej-Smigielski
-REM VERSION: 26.11.01.1
+REM VERSION: 26.11.01.2
 REM -------------------------------
 
 :: Check if parameters were provided

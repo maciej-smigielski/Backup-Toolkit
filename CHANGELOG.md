@@ -6,6 +6,11 @@ Notable user-facing changes for each release. Unreleased entries summarize chang
 
 - No unreleased changes.
 
+## v26.11.01.2
+
+- **Documentation:** Updated the README's release and repository links to point to the public `Backup-Toolkit` repository.
+- **Website:** Added a Primer stylesheet override to hide the default open-source footer.
+
 ## v26.11.01.1
 
 - **Documentation:** Prepared the main README for publication on the [public Backup-Toolkit project site](https://maciej-smigielski.github.io/Backup-Toolkit/).
