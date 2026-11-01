@@ -79,6 +79,14 @@ For a complete documentation overview, see the [Documentation index](Docs/README
 - [Rclone GitHub](https://github.com/rclone/rclone) ([Rclone.org](https://rclone.org/)) - command-line program used to sync and transfer files to/from cloud storage providers. Backup Toolkit is tested against Rclone v1.75.1, but this version is not bundled with the toolkit and must be downloaded and installed separately; see [Installation](Docs/Installation.md).
 - [PSToml GitHub](https://github.com/jborean93/PSToml) - PowerShell module used to read and write TOML configuration files. Backup Toolkit is bundled with and tested against PSToml v0.5.0. Newer PSToml versions may also be installed when needed; see [Installation](Docs/Installation.md).
 
+## Support and responsibilities
+
+Official support, ongoing maintenance, updates, and service levels are not
+guaranteed. Before relying on Backup-Toolkit, assess whether it is suitable for
+your environment, review its configuration and security, and regularly test
+that your backups can be restored. For warranty and liability terms, see
+[Licensing](LICENSING.md).
+
 ## License
 
 Backup-Toolkit is licensed under the [PolyForm Internal Use License 1.0.0](LICENSE).

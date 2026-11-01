@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Interactively manages a daily Windows scheduled task for a Backup-Toolkit plan.
 
@@ -51,7 +51,7 @@ param(
 try {
 
 # Script version
-$ScriptVersion = "26.10.28.0"
+$ScriptVersion = "26.11.01.0"
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'

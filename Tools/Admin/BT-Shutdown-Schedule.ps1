@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Interactively manages a repeating Windows scheduled task for shutdown checks.
 
@@ -58,7 +58,7 @@ param(
 try {
 
 # Script version
-$ScriptVersion = "26.10.28.0"
+$ScriptVersion = "26.11.01.0"
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'

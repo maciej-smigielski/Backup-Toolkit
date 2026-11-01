@@ -3,7 +3,7 @@
 REM -------------------------------
 REM NAME: BT-Shutdown-Schedule-example.cmd
 REM AUTHOR: Maciej-Smigielski
-REM VERSION: 26.10.28.0
+REM VERSION: 26.11.01.0
 REM -------------------------------
 
 rem ===== BEGIN: User-customizable settings =====

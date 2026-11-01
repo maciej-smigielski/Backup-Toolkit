@@ -35,7 +35,7 @@ flowchart TD
 | `Tools/BT-Plan.ps1` | Reads a `.BT-Plan`, selects jobs by schedule or command-line override, invokes `BT-Backup`, and aggregates results. |
 | `Tools/BT-Shutdown.cmd` | Evaluates INI-configured shutdown checks, optionally sends a notification, and invokes Windows shutdown. |
 | `Tools/Admin/` | Administrative utilities for scheduling and Windows integration, separate from the backup engine. |
-| `Tools/Modules/BT.Common/` | Shared logging, message and file dialogs, timestamps, session locks, temporary directories, formatting, and controlled exit behavior. Used by `BT-Backup`, `BT-Plan`, `BT-File-Credentials`, `BT-File-Get-Password`, `BT-Mail-Credentials`, `BT-Mail-Send`, and `BT-Rclone-Config`. |
+| `Tools/Modules/BT.Common/` | Shared logging, message and file dialogs, timestamps, session and coordinator locks, temporary directories, formatting, controlled exit behavior, and Windows shutdown event inspection. Used by `BT-Backup`, `BT-Plan`, `BT-File-Credentials`, `BT-File-Get-Password`, `BT-Mail-Credentials`, `BT-Mail-Send`, and `BT-Rclone-Config`. |
 | `Tools/Modules/PSToml/` | Bundled TOML parser used by the runtime scripts. |
 | `Tools/Utilities/Rclone/` | Default location for the external `rclone` executable. |
 | Other `Tools/BT-*.ps1` scripts | Manage credentials, rclone configuration, and mail. |
@@ -49,7 +49,6 @@ Most `.cmd` files are Windows command-shell launchers for their corresponding Po
 | `Tools/` | Runtime commands, launchers, modules, and utilities shipped with the toolkit. |
 | `Docs/` | User guides and technical reference; see [Docs/README.md](README.md). |
 | `Examples/` | Runnable examples, sample configurations, and a sample repository layout; see [Examples/README.md](../Examples/README.md). |
-| `Tests/` | Local test workspace. Its contents are not tracked; see [Tests/README.md](../Tests/README.md). |
 | `Config/` | Local configuration for this installation. It may contain credentials or other sensitive data and is not tracked, except for its [Config/README.md](../Config/README.md). |
 
 ## Installation and operational data

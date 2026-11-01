@@ -36,7 +36,7 @@ Create the folder layout described in [Architecture](./Architecture.md#installat
    BackupPlan\                   # backup plans (created in step 6) and their logs
       logs\                      # backup plan execution logs
    Config\                       # rclone configuration and credentials
-   Locks\                        # optional central location for session lock files
+   Locks\                        # optional central location for session and coordinator lock files
 ```
 
 ---

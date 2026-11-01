@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Manages per-user Windows file associations for Backup-Toolkit.
 
@@ -25,7 +25,7 @@
 try {
 
 # Script version
-$ScriptVersion = "26.10.28.0"
+$ScriptVersion = "26.11.01.0"
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'

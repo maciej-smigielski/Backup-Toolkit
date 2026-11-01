@@ -59,7 +59,7 @@ Network access is required only when the source or the destination is a remote r
 6. Builds the rclone source path (`source_system:source_path` or a local path) and, when `source_filter = true`, locates the matching `.BT-Filter` file.
 7. Builds the destination path — either the local **BackupHome** (Colocated Backup) or a remote path derived from `destination_system` / `destination_storage` (Split Backup).
 8. Optionally loads and decrypts the rclone config password from `rclone_credentials` (`.BT-Rclone-Config`) and mail credentials from `mail_credentials` (`.BT-Mail-Credentials`).
-9. Acquires the session lock file (via `CreateSessionLockFile`).
+9. Acquires the coordinator lock (`Open-CoordinatorLockFile`), checks for a pending or ongoing system shutdown (`Test-ShutdownPending`), and acquires the session lock (`Open-SessionLockFile`) only if the check succeeds. Releases the coordinator lock (`Close-CoordinatorLockFile`) before continuing.
 10. Checks the rclone version by running `rclone --version`.
 11. Validates the destination layout: `current/` and `archive/` must exist under `<destination>/<backup_name>/`. For remote destinations the check uses `rclone lsjson`.
 12. Runs `rclone sync <source> <current>` with `--backup-dir <archive/archive_<timestamp>_<PID>>` plus the switches implied by the config (`--filter-from`, `--track-renames …`, `--iclouddrive-service photos`, `--fix-case` / `--create-empty-src-dirs` / `--delete-excluded` when the matching `destination_fc` / `destination_cesd` / `destination_de` flags are `true`, `--log-level INFO`, `--log-file …`, and `--dry-run` under `-DryRun`).
@@ -71,6 +71,14 @@ Network access is required only when the source or the destination is a remote r
 
 Under `-ValidateOnly` the script stops after step 11 — no rclone `sync`, no stats collection, no mail. Under `-DryRun` steps 12–14 still execute, but rclone is called with `--dry-run` so no data is written.
 
+### Startup safeguards
+
+After configuration validation, `BT-Backup` checks Windows shutdown events recorded since the last boot via [BT.Common](./BT.Common.md). An ongoing shutdown produces `BTCommonShutdownStarted` (`807`); a shutdown request without a later cancellation produces `BTCommonShutdownPending` (`808`). Either condition prevents session lock acquisition and rclone execution; reporting and cleanup still follow the normal error path.
+
+The coordinator lock is `<lock_path>/.<lock-directory-name>` (for example, `Locks/.Locks`). It serializes the shutdown check and session lock acquisition for processes using the same lock directory. It is released after this startup sequence, including when the shutdown check or session lock acquisition fails; the separate session lock remains open until session cleanup. Coordinator lock acquisition uses up to 30 attempts with one-second intervals.
+
+These safeguards also apply under `-ValidateOnly`, `-DryRun`, and `-FromPlan`. The shutdown check runs once during startup, not continuously during the backup.
+
 ---
 
 ## Parameters
@@ -79,7 +87,7 @@ The parameter block uses `CmdletBinding()`, so PowerShell binding rules apply (p
 
 ### `-ConfigFile <path>`
 
-**Required.** Path to the `.BT-Backup` configuration file. The extension must be `.BT-Backup` (case-insensitive), the file's base name must match `bt-backup.backup_name`, and its parent directory must equal `<backup_data>/<backup_name>/` after environment-variable expansion.
+**Required.** Path to the `.BT-Backup` configuration file. The extension must be `.BT-Backup` (case-insensitive), the file's base name must match `bt-backup.backup_name`, must not contain spaces or start with a dot, and its parent directory must equal `<backup_data>/<backup_name>/` after environment-variable expansion.
 
 ### `-LogPath <path>`
 
@@ -133,7 +141,7 @@ Optional section.
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `temp_path` | string | `%TEMP%` | Parent folder for the session temp directory and rclone's `--temp-dir` / `--cache-dir`. |
-| `lock_path` | string | folder of the `.BT-Backup` file | Folder in which the session lock file `BT-Backup_<backup_name>.lock` is created. |
+| `lock_path` | string | folder of the `.BT-Backup` file | Folder for the session lock `BT-Backup_<backup_name>.lock` and the startup coordinator lock `.<lock-directory-name>`. Processes must use the same folder to share the coordinator lock. |
 
 ### `[mail]`
 
@@ -206,7 +214,7 @@ Optional section pointing to the rclone binary and its configuration.
 | `142` | `MailCredentials` | Loading or decoding the `.BT-Mail-Credentials` password failed. |
 | `143` | `MailSend` | `Send-MailMessage` failed. |
 
-Additionally, the shared codes `801`–`804` from `BT.Common` may bubble up (`BTCommonLock`, `BTCommonUnlock`, `BTCommonSessionTemp`, `BTCommonCleanup`).
+Additionally, the shared codes `801`–`808` from `BT.Common` may bubble up (`BTCommonCoordinatorLock`, `BTCommonCoordinatorUnlock`, `BTCommonSessionLock`, `BTCommonSessionUnlock`, `BTCommonSessionTempDirCreate`, `BTCommonSessionTempDirRemove`, `BTCommonShutdownStarted`, `BTCommonShutdownPending`).
 
 ---
 
@@ -251,6 +259,7 @@ Under `-FromPlan`, `BT-Backup` emits the following lines to stdout, one line eac
 | Rclone log | `<LogPath>/rclone_<backup_name>_<yyyy-MM-dd_HH-mm-ss>_<PID>.log` | Raw rclone `--log-file` output at `INFO` level; parsed by the script for `(ATDR)` flags. |
 | Archive session folder | `<destination>/<backup_name>/archive/archive_<yyyy-MM-dd_HH-mm-ss>_<PID>/` | Previous versions of files that were changed or removed during this run (created by rclone's `--backup-dir`). |
 | Session lock | `<lock_path>/BT-Backup_<backup_name>.lock` | Kept open for the whole session; contains `PID`, `COMMAND`, `LOG` and is opened with `FileShare.Read` so operators can inspect it. |
+| Coordinator lock | `<lock_path>/.<lock-directory-name>` | Contains `PID`, `COMMAND`, `LOG`; held only during the startup shutdown check and session lock acquisition, then closed and removed. |
 | Mail attachment (ZIP) | `<session temp dir>/<backup_name>_<yyyy-MM-dd_HH-mm-ss>_<PID>.zip` | Created when `mail_attach_log = true`; deleted with the session temp directory. |
 
 ---
@@ -259,7 +268,7 @@ Under `-FromPlan`, `BT-Backup` emits the following lines to stdout, one line eac
 
 | Component | Relationship |
 | --- | --- |
-| [BT.Common](./BT.Common.md) | Provides `Initialize-BTCommon`, `Write-Log` / `Write-LogError`, `CreateSessionLockFile` / `RemoveSessionLockFile`, `CreateSessionTemporaryDir` / `RemoveSessionTemporaryDir`, `Get-ElapsedDurationString`, `Format-ByteSizeString`, and `Exit-Pause`. |
+| [BT.Common](./BT.Common.md) | Provides runtime initialization, logging, startup shutdown checks, coordinator and session locking, session temporary directory management, formatting helpers, and controlled exit. |
 | PSToml | Parses the `.BT-Backup` TOML file (`ConvertFrom-Toml` / `ConvertTo-Toml`). |
 | rclone | External binary invoked for `--version`, `lsjson` and `sync`. Password injected via `RCLONE_CONFIG_PASS` when `rclone_credentials` is configured. |
 | [BT-Rclone-Config](./BT-Rclone-Config.md) | Owns the `.BT-Rclone-Config` file referenced by `[rclone].rclone_config`. |
@@ -274,7 +283,18 @@ Under `-FromPlan`, `BT-Backup` emits the following lines to stdout, one line eac
 - The Backup layout must match the **Colocated** or **Split** variant defined in the [Glossary](./Glossary.md). `BT-Backup` verifies that `current/` and `archive/` exist under `<destination>/<backup_name>/` before running the sync.
 - `-ValidateOnly` stops after the destination check; `-DryRun` still runs rclone (with `--dry-run`) so archive stats and transfer summary are populated but no data is written.
 - The lock file uses `FileShare.Read`, so an operator can inspect `PID`, `COMMAND` and `LOG` of a running Backup at any time; the lock is *exclusive* enough to block a second `BT-Backup` on the same config.
-- Rclone is invoked with `--log-level INFO`, `--log-file <rclone log>` and `--ask-password=false`. The `[destination]` boolean keys `destination_fc`, `destination_cesd` and `destination_de` control `--fix-case`, `--create-empty-src-dirs` and `--delete-excluded`, respectively; each defaults to `true`, and setting it to `false` omits the corresponding switch. Other switches are controlled by their TOML settings: `[source].source_filter` adds `--filter-from`, `[source].source_renames` adds `--track-renames --track-renames-strategy hash`, `[source].source_iphotos` adds `--iclouddrive-service photos`, `[runtime].temp_path` supplies `--temp-dir` and `--cache-dir`, and `[rclone].rclone_config` supplies `--config`.
+- Rclone options:
+  - Always passed: `--log-level INFO`, `--log-file <rclone log>` and `--ask-password=false`.
+  - `[destination]` options (each defaults to `true`):
+    - `destination_fc` adds `--fix-case` when `true`.
+    - `destination_cesd` adds `--create-empty-src-dirs` when `true`.
+    - `destination_de` adds `--delete-excluded` when `true`.
+  - `[source]` options (each defaults to `false`):
+    - `source_filter` adds `--filter-from` when `true`.
+    - `source_renames` adds `--track-renames --track-renames-strategy hash` when `true`.
+    - `source_iphotos` adds `--iclouddrive-service photos` when `true`.
+  - `[runtime]`: `temp_path` supplies `--temp-dir` and `--cache-dir`.
+  - `[rclone]`: `rclone_config` supplies `--config`.
 - `RCLONE_CONFIG_PASS` and mail SMTP passwords are kept in memory only for the duration of the corresponding call and are never written to disk or to the logs.
 - The mail body is HTML; log lines are stored raw in `$BTCommon.MailBody` and HTML-encoded when the body is rendered. The mail subject encodes the mode (`[VALIDATE ONLY]`, `[DRY RUN]`) and the `(ATDR)` flags.
 - When invoked from `BT-Plan`, control records are the *only* structured output; regular console lines are consumed as diagnostics by the parent process.

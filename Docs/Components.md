@@ -58,7 +58,7 @@ Modules are located under `Tools/Modules/`. They are imported by scripts rather 
 
 | Module | Location | Responsibility and consumers | Reference |
 | --- | --- | --- | --- |
-| `BT.Common` | [Tools/Modules/BT.Common/](../Tools/Modules/BT.Common/) | Toolkit-owned shared services: logging and mail-body accumulation, dialogs, timestamps, session locks, temporary directories, formatting, and controlled exit behavior. Used by `BT-Backup`, `BT-Plan`, `BT-File-Credentials`, `BT-File-Get-Password`, `BT-Mail-Credentials`, `BT-Mail-Send`, and `BT-Rclone-Config`. Exports shared state and helper functions; does not implement backup, credential, or SMTP workflows. | [BT.Common](./BT.Common.md) |
+| `BT.Common` | [Tools/Modules/BT.Common/](../Tools/Modules/BT.Common/) | Toolkit-owned shared services: logging and mail-body accumulation, dialogs, timestamps, session and coordinator locks, temporary directories, formatting, controlled exit behavior, and Windows shutdown event inspection through `Get-ShutdownEventsSinceBoot` and `Test-ShutdownPending`. Used by `BT-Backup`, `BT-Plan`, `BT-File-Credentials`, `BT-File-Get-Password`, `BT-Mail-Credentials`, `BT-Mail-Send`, and `BT-Rclone-Config`. Exports shared state and helper functions; does not implement backup, credential, or SMTP workflows. | [BT.Common](./BT.Common.md) |
 
 ### External PowerShell modules
 

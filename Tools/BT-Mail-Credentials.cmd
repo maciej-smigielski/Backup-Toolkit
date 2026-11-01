@@ -3,7 +3,7 @@
 REM -------------------------------
 REM NAME: BT-Mail-Credentials.cmd
 REM AUTHOR: Maciej-Smigielski
-REM VERSION: 26.10.28.0
+REM VERSION: 26.11.01.0
 REM -------------------------------
 
 call powershell -WindowStyle Minimized -ExecutionPolicy Bypass -File "%~dpn0.ps1" %*

@@ -137,7 +137,7 @@ param(
 try {
 
 # Wersja skryptu
-$ScriptVersion = "26.10.28.0"
+$ScriptVersion = "26.11.01.0"
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -327,10 +327,10 @@ if ([string]::IsNullOrWhiteSpace($($ConfigFileInfo.BaseName))) {
     Exit-Pause -ExitCode:$($ExitResult_local.Code)
 }
 
-# Sprawdzenie BaseName, nazwa pliku config nie może zawierać spacji
-if ($($ConfigFileInfo.BaseName) -match ' ') {
+# Sprawdzenie BaseName, nazwa pliku config nie może zawierać spacji ani zaczynać się od kropki
+if (($ConfigFileInfo.BaseName -match ' ') -or ($ConfigFileInfo.BaseName -match '^\.')) {
     $ExitResult_local=$ExitDefinitions.General
-    Write-LogError -LogMessage ("BaseName in ConfigFilePath >$ConfigFilePath< cannot contain spaces.") -CallStackFrame:(Get-PSCallStack)[0] `
+    Write-LogError -LogMessage ("BaseName in ConfigFilePath >$ConfigFilePath< cannot contain spaces or start with a dot.") -CallStackFrame:(Get-PSCallStack)[0] `
         -ErrorRecord:$null `
         -ExitResult:$ExitResult_local -IncludeErrorMessage:$true `
         -WriteToHost:$true
@@ -920,7 +920,7 @@ function ProcessParamOrIssue {
 
     # tworzy pełną ścieżkę do pliku lock, sam lock będzie wykonywany później
     try {
-        $BTCommon.LockFile = Join-Path -Path $($BTCommon.LockDir) -ChildPath ("$default_lock_prefix"+"_"+$($ConfigFileInfo.BaseName)+".lock")
+        $BTCommon.SessionLockFile = Join-Path -Path $($BTCommon.LockDir) -ChildPath ("$default_lock_prefix"+"_"+$($ConfigFileInfo.BaseName)+".lock")
     } catch {
         $ExitResult_local=$ExitDefinitions.Param
         Write-LogError -LogMessage ("Unable to create session lock file name") -CallStackFrame:(Get-PSCallStack)[0] `
@@ -929,7 +929,7 @@ function ProcessParamOrIssue {
             -WriteToHost:$true
         return $ExitResult_local
     }
-    Write-Log -LogLine ("BTCommon.LockFile: >"+($BTCommon.LockFile)+"<") -WriteToHost:$false
+    Write-Log -LogLine ("BTCommon.SessionLockFile: >"+($BTCommon.SessionLockFile)+"<") -WriteToHost:$false
 
     $MailToEnabled=$false
     # sprawdza mail_to
@@ -1537,7 +1537,7 @@ $body += @"
         if ( ($MailConfig.AttachLog) ) {
 
             # tworzy katalog tymczasowy dla sesji, jeśli nie został jeszcze utworzony
-            if ($null -ne ($rc = CreateSessionTemporaryDir)) {
+            if ($null -ne ($rc = Initialize-SessionTemporaryDirectory)) {
                 return $rc
             }
 
@@ -1736,18 +1736,45 @@ if ($null -ne $ExitResult_single) {
 }
 
 # Waliduje konfigurację backup jobs
-$ExitResult_single = ProcessParamJobs
-if ($null -ne $ExitResult_single) {
-    $ExitResults[$ExitResults.Count+1] = $ExitResult_single
+# wykonuje się tylko wtedy, gdy nie było wcześniejszych błędów
+if ($ExitResults.count -eq 0) {
+    $ExitResult_single = ProcessParamJobs
+    if ($null -ne $ExitResult_single) {
+        $ExitResults[$ExitResults.Count+1] = $ExitResult_single
+    }
+}
+
+# Tworzy plik lock koordynatora,
+# wykonuje się tylko wtedy, gdy nie było wcześniejszych błędów
+if ($ExitResults.count -eq 0) {
+    $ExitResult_single = Open-CoordinatorLockFile -Command $Script.CommandPath
+    if ($null -ne $ExitResult_single) {
+        $ExitResults[$ExitResults.Count+1] = $ExitResult_single
+    }
+}
+
+# Sprawdza, czy trwa zamykanie systemu lub zostało ono zaplanowane,
+# wykonuje się tylko wtedy, gdy nie było wcześniejszych błędów
+if ($ExitResults.count -eq 0) {
+    $ExitResult_single = Test-ShutdownPending
+    if ($null -ne $ExitResult_single) {
+        $ExitResults[$ExitResults.Count+1] = $ExitResult_single
+    }
 }
 
 # Tworzy plik lock dla tej sesji,
 # wykonuje się tylko wtedy, gdy nie było wcześniejszych błędów
 if ($ExitResults.count -eq 0) {
-    $ExitResult_single = CreateSessionLockFile -Command $Script.CommandPath
+    $ExitResult_single = Open-SessionLockFile -Command $Script.CommandPath
     if ($null -ne $ExitResult_single) {
         $ExitResults[$ExitResults.Count+1] = $ExitResult_single
     }
+}
+
+# Usuwa plik lock koordynatora dla tej sesji
+$ExitResult_single = Close-CoordinatorLockFile
+if ($null -ne $ExitResult_single) {
+    $ExitResults[$ExitResults.Count+1] = $ExitResult_single
 }
 
 # Uruchamia backup joby startujące bt-backup i wyświetla status jobów
@@ -1779,13 +1806,13 @@ if ((-not $ValidateOnly) -and (-not $ValidateJobs)) {
 }
 
 # Czyści katalog i pliki tymczasowe dla tej sesji
-$ExitResult_single = RemoveSessionTemporaryDir
+$ExitResult_single = Remove-SessionTemporaryDirectory
 if ($null -ne $ExitResult_single) {
     $ExitResults[$ExitResults.Count+1] = $ExitResult_single
 }
 
 # Usuwa plik lock dla tej sesji
-$ExitResult_single = RemoveSessionLockFile
+$ExitResult_single = Close-SessionLockFile
 if ($null -ne $ExitResult_single) {
     $ExitResults[$ExitResults.Count+1] = $ExitResult_single
 }

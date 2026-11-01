@@ -1,12 +1,16 @@
-
+﻿
 Set-StrictMode -Version Latest
 
 # Definicje kodów wyjścia i odpowiadających im komunikatów błędów modułu BT.Common
 $BTCommonExitDefinitions = @{
-    BTCommonLock = @{ Code = 801; Message = "Lock process failed" }
-    BTCommonUnlock = @{ Code = 802; Message = "Unlock process failed" }
-    BTCommonSessionTemp = @{ Code = 803; Message = "Temporary directory creation failed" }
-    BTCommonCleanup = @{ Code = 804; Message = " Temporary directory cleanup failed" }
+    BTCommonCoordinatorLock = @{ Code = 801; Message = "Coordinator lock process failed" }
+    BTCommonCoordinatorUnlock = @{ Code = 802; Message = "Coordinator unlock process failed" }
+    BTCommonSessionLock = @{ Code = 803; Message = "Session lock process failed" }
+    BTCommonSessionUnlock = @{ Code = 804; Message = "Session unlock process failed" }
+    BTCommonSessionTempDirCreate = @{ Code = 805; Message = "Temporary directory creation failed" }
+    BTCommonSessionTempDirRemove = @{ Code = 806; Message = " Temporary directory cleanup failed" }
+    BTCommonShutdownStarted = @{ Code = 807; Message = "Operating system is shutting down" }
+    BTCommonShutdownPending = @{ Code = 808; Message = "Operating system shutdown is pending" }
 }
 
 # Zmienne wewnętrzne modułu BT.Common
@@ -22,12 +26,14 @@ $BTCommon = [PSCustomObject]@{
     MailBody = @{}                      # Zawiera treść maila do wysłania, ustawiane przez Write-Log
     #
     LockDir = $null                     # Ścieżka do katalogu lock, ustawiane manualnie, obiekt System.IO.DirectoryInfo
-    LockFile = $null                    # Ścieżka do pliku lock, ustawiane manualnie, obiekt System.String
-    LockFileHandle = $null              # Uchwyt do pliku lock, ustawiane przez CreateSessionLockFile, obiekt System.IO.FileStream
+    SessionLockFile = $null             # Ścieżka do pliku lock sesji, ustawiane manualnie, obiekt System.String
+    SessionLockFileHandle = $null       # Uchwyt do pliku lock sesji, ustawiane przez Open-SessionLockFile, obiekt System.IO.FileStream
+    CoordinatorLockFile = $null         # Ścieżka do pliku lock koordynatora, ustawiane przez Open-CoordinatorLockFile, obiekt System.String
+    CoordinatorLockFileHandle = $null   # Uchwyt do pliku lock koordynatora, ustawiane przez Open-CoordinatorLockFile, obiekt System.IO.FileStream
     #
     TempDir = $null                     # Katalog tymczasowy, ustawiane manualnie, obiekt System.String
-    ProcessTempDir = $null              # Katalog tymczasowy dla tej sesji, ustawiane przez CreateSessionTemporaryDir, obiekt System.String
-    ProcessTempDirCreated = $false      # Flaga określająca, czy katalog tymczasowy dla sesji został utworzony, ustawiana przez CreateSessionTemporaryDir
+    ProcessTempDir = $null              # Katalog tymczasowy dla tej sesji, ustawiane przez Initialize-SessionTemporaryDirectory, obiekt System.String
+    ProcessTempDirCreated = $false      # Flaga określająca, czy katalog tymczasowy dla sesji został utworzony, ustawiana przez Initialize-SessionTemporaryDirectory
 }
 
 # Inicjalizuje moduł BT.Common
@@ -95,6 +101,11 @@ function Write-Log {
             return
     }
 
+    $outputLogLine = $LogLine
+    if ($DebugLevel) {
+        $outputLogLine = "[Debug] $LogLine"
+    }
+
     if ($WriteToHost -or ($DebugLevel -and $BTCommon.DebugToConsole)) {
         $foregroundColor = switch ($Color) {
             'Error'   { 'Red' }
@@ -105,9 +116,9 @@ function Write-Log {
         }
 
         if ($null -eq $foregroundColor) {
-            Write-Host $LogLine
+            Write-Host $outputLogLine
         } else {
-            Write-Host $LogLine -ForegroundColor $foregroundColor
+            Write-Host $outputLogLine -ForegroundColor $foregroundColor
         }
     }
 
@@ -119,14 +130,15 @@ function Write-Log {
     }
 
     if ( ($WriteToLog) -and (-not [string]::IsNullOrWhiteSpace($BTCommon.LogFile)) ){
-        Add-Content -Path $BTCommon.LogFile -Value ($(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')+": $LogLine")
+        Add-Content -Path $BTCommon.LogFile -Value ($(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')+": $outputLogLine")
     }
 
     if ($ShowDialogBox) {
-        Show-MessageDialog -Title:$BTCommon.ApplicationTitle -Message:$LogLine
+        Show-MessageDialog -Title:$BTCommon.ApplicationTitle -Message:$outputLogLine
     }
 }
 
+# Formatuje i zapisuje błąd lub ostrzeżenie z informacją o miejscu wywołania
 function Write-LogError {
     param (
         [string]$LogMessagePrefix = "",             # Opcjonalny prefiks dla komunikatu błędu, jest dołączany na początku komunikatu
@@ -177,30 +189,240 @@ function Write-LogError {
         -Color:$Color
 }
 
-# Tworzy plik lock dla tej sesji
-function CreateSessionLockFile {
-    param(
-        [string]$Command
-    )
+# Zbiera zdarzenia systemowe związane z zamknięciem od czasu uruchomienia systemu
+function Get-ShutdownEventsSinceBoot {
+    $bootTime = (Get-CimInstance -ClassName Win32_OperatingSystem).LastBootUpTime
 
-    if ([string]::IsNullOrWhiteSpace($($BTCommon.LockFile))) {
-        $ExitResult_local=$BTCommonExitDefinitions.BTCommonLock
-        Write-LogError -LogMessage ("CreateSessionLockFile: BTCommon.LockFile is empty.") -CallStackFrame:(Get-PSCallStack)[0] `
+    # Bez -ErrorAction SilentlyContinue Get-WinEvent rzuca wyjątek, gdy brak zdarzeń
+    $events = Get-WinEvent -FilterHashtable @{
+        LogName   = 'System'
+        Id        = 1074, 1075, 13
+        StartTime = $bootTime
+    } -ErrorAction SilentlyContinue | Where-Object {
+        ($_.Id -in 1074, 1075 -and $_.ProviderName -eq 'User32') -or
+        ($_.Id -eq 13 -and $_.ProviderName -eq 'Microsoft-Windows-Kernel-General')
+    }
+
+    $descriptions = @{
+        1074 = 'Shutdown/restart requested'
+        1075 = 'Shutdown/restart aborted'
+        13   = 'Operating system is shutting down'
+    }
+
+    if (@($events).Count -eq 0) {
+        Write-Log -LogLine 'Get-ShutdownEventsSinceBoot: Event count: 0' -WriteToHost:$false -DebugLevel:$true
+    } else {
+        @($events) | Sort-Object TimeCreated | ForEach-Object {
+            $line = 'Get-ShutdownEventsSinceBoot: Event: {0:yyyy-MM-dd HH:mm:ss}; RecordId: {1}; ID: {2}; {3}' -f $_.TimeCreated, $_.RecordId, $_.Id, $descriptions[$_.Id]
+            Write-Log -LogLine $line -WriteToHost:$false -DebugLevel:$true
+        }
+    }
+
+    @($events) | Sort-Object TimeCreated | ForEach-Object {
+        [PSCustomObject]@{
+            RecordId    = $_.RecordId
+            TimeCreated = $_.TimeCreated
+            Id          = $_.Id
+            Description = $descriptions[$_.Id]
+            Message     = $_.Message
+        }
+    }
+}
+
+# Sprawdza, czy system oczekuje na zamknięcie lub jest już w trakcie zamykania, zwraca null gdy zamknięcie nie oczekuje, w przeciwnym razie kod błędu
+function Test-ShutdownPending {
+    $events = @(Get-ShutdownEventsSinceBoot | Sort-Object RecordId)
+
+    $shutdownStarted = $events |
+        Where-Object { $_.Id -eq 13 } |
+        Select-Object -First 1
+
+    if ($null -ne $shutdownStarted) {
+        $ExitResult_local=$BTCommonExitDefinitions.BTCommonShutdownStarted
+        Write-LogError -LogMessage ('Test-ShutdownPending: Found event 13; TimeCreated: {0:yyyy-MM-dd HH:mm:ss}; RecordId: {1}; Operating system is shutting down' -f $shutdownStarted.TimeCreated, $shutdownStarted.RecordId) -CallStackFrame:(Get-PSCallStack)[0] `
             -ErrorRecord:$null `
             -ExitResult:$ExitResult_local `
             -WriteToHost:$true
         return $ExitResult_local
-    } elseif ($BTCommon.LockFileHandle) {
-        $ExitResult_local=$BTCommonExitDefinitions.BTCommonLock
-        Write-LogError -LogMessage ("CreateSessionLockFile: Lock file already created by this session.") -CallStackFrame:(Get-PSCallStack)[0] `
+    }
+
+    $lastShutdownRequest = $events |
+        Where-Object { $_.Id -eq 1074 } |
+        Select-Object -Last 1
+
+    if ($null -eq $lastShutdownRequest) {
+        Write-Log -LogLine 'Test-ShutdownPending: No event 1074 or 13 found; Shutdown is not pending' -WriteToHost:$false
+        return $null
+    }
+
+    $cancellationAfterRequest = $events |
+        Where-Object { $_.Id -eq 1075 -and $_.RecordId -gt $lastShutdownRequest.RecordId } |
+        Select-Object -First 1
+
+    if ($null -ne $cancellationAfterRequest) {
+        Write-Log -LogLine ('Test-ShutdownPending: Found event 1075 after event 1074; TimeCreated: {0:yyyy-MM-dd HH:mm:ss}; RecordId: {1}; Shutdown is not pending' -f $cancellationAfterRequest.TimeCreated, $cancellationAfterRequest.RecordId) -WriteToHost:$false
+        return $null
+    }
+
+    $ExitResult_local=$BTCommonExitDefinitions.BTCommonShutdownPending
+    Write-LogError -LogMessage ('Test-ShutdownPending: Found event 1074 and not event 1075 after it; TimeCreated: {0:yyyy-MM-dd HH:mm:ss}; RecordId: {1}; Shutdown pending' -f $lastShutdownRequest.TimeCreated, $lastShutdownRequest.RecordId) -CallStackFrame:(Get-PSCallStack)[0] `
+        -ErrorRecord:$null `
+        -ExitResult:$ExitResult_local `
+        -WriteToHost:$true
+    return $ExitResult_local
+}
+
+# Tworzy plik lock koordynatora na podstawie katalogu LockDir
+function Open-CoordinatorLockFile {
+    param(
+        [string]$Command    # Pełna ścieżka do skryptu powiązanego z plikiem lock koordynatora
+    )
+
+    if ([string]::IsNullOrWhiteSpace($($BTCommon.LockDir))) {
+        $ExitResult_local=$BTCommonExitDefinitions.BTCommonCoordinatorLock
+        Write-LogError -LogMessage ("Open-CoordinatorLockFile: BTCommon.LockDir is empty.") -CallStackFrame:(Get-PSCallStack)[0] `
+            -ErrorRecord:$null `
+            -ExitResult:$ExitResult_local `
+            -WriteToHost:$true
+        return $ExitResult_local
+    } elseif ($BTCommon.CoordinatorLockFileHandle) {
+        $ExitResult_local=$BTCommonExitDefinitions.BTCommonCoordinatorLock
+        Write-LogError -LogMessage ("Open-CoordinatorLockFile: Coordinator lock file already created by this session.") -CallStackFrame:(Get-PSCallStack)[0] `
             -ErrorRecord:$null `
             -ExitResult:$ExitResult_local `
             -WriteToHost:$true
         return $ExitResult_local
     } else {
         try {
-            $BTCommon.LockFileHandle = [System.IO.File]::Open(
-                $BTCommon.LockFile, 
+            $LockDirFullPath = [System.IO.Path]::GetFullPath($BTCommon.LockDir)
+            $LockDirParent = [System.IO.Directory]::GetParent($LockDirFullPath)            
+            if ([string]::IsNullOrWhiteSpace($LockDirParent)) {
+                $ExitResult_local=$BTCommonExitDefinitions.BTCommonCoordinatorLock
+                Write-LogError -LogMessage ("Open-CoordinatorLockFile: Lock directory parent is empty.") -CallStackFrame:(Get-PSCallStack)[0] `
+                    -ErrorRecord:$null `
+                    -ExitResult:$ExitResult_local `
+                    -WriteToHost:$true
+                return $ExitResult_local
+            }
+            $LockDirName = Split-Path -Path $LockDirFullPath -Leaf -ErrorAction Stop
+            $BTCommon.CoordinatorLockFile = Join-Path -Path $BTCommon.LockDir -ChildPath ('.' + $LockDirName) -ErrorAction Stop
+        } catch {
+            $ExitResult_local=$BTCommonExitDefinitions.BTCommonCoordinatorLock
+            Write-LogError -LogMessage ("Open-CoordinatorLockFile: Unable to determine coordinator lock file path.") -CallStackFrame:(Get-PSCallStack)[0] `
+                -ErrorRecord:$_ `
+                -ExitResult:$ExitResult_local `
+                -WriteToHost:$true
+            return $ExitResult_local
+        }
+    }
+
+    $Attempts = 30
+    $Opened = $false
+    $LastErrorRecord = $null
+    for ($Attempt = 1; $Attempt -le $Attempts; $Attempt++) {
+        $CoordinatorLockFileHandle = $null
+
+        try {
+            $CoordinatorLockFileHandle = [System.IO.File]::Open(
+                $BTCommon.CoordinatorLockFile,
+                [System.IO.FileMode]::Create,
+                [System.IO.FileAccess]::ReadWrite,
+                [System.IO.FileShare]::Read
+            )
+
+            $CoordinatorLockFileContent = @(
+                "PID=$PID",
+                "COMMAND=$Command",
+                "LOG=$($BTCommon.LogFile)"
+            ) -join "`r`n"
+            $CoordinatorLockFileHandle.Write(
+                [Text.Encoding]::UTF8.GetBytes($CoordinatorLockFileContent),
+                0,
+                [Text.Encoding]::UTF8.GetByteCount($CoordinatorLockFileContent)
+            )
+            $CoordinatorLockFileHandle.Flush()
+
+            $BTCommon.CoordinatorLockFileHandle = $CoordinatorLockFileHandle
+            $Opened = $true
+        } catch {
+            $LastErrorRecord = $_
+            Write-Log -LogLine ("Open-CoordinatorLockFile: Lock attempt $Attempt/$Attempts failed: $($_.Exception.Message)") -WriteToHost:$false
+        } finally {
+            if ((-not $Opened) -and ($null -ne $CoordinatorLockFileHandle)) {
+                $CoordinatorLockFileHandle.Dispose()
+            }
+        }
+
+        if ($Opened) {
+            break
+        }
+
+        if ($Attempt -lt $Attempts) {
+            Start-Sleep -Seconds 1
+        }
+    }
+
+    if (-not $Opened) {
+        $ExitResult_local=$BTCommonExitDefinitions.BTCommonCoordinatorLock
+        Write-LogError -LogMessage ("Open-CoordinatorLockFile: Unable to create coordinator lock file >$($BTCommon.CoordinatorLockFile)< after $Attempts attempts.") -CallStackFrame:(Get-PSCallStack)[0] `
+            -ErrorRecord:$LastErrorRecord `
+            -ExitResult:$ExitResult_local `
+            -WriteToHost:$true
+        return $ExitResult_local
+    }
+
+    Write-Log -LogLine ("Open-CoordinatorLockFile: Created coordinator lock file >$($BTCommon.CoordinatorLockFile)< at $Attempt attempt.") -WriteToHost:$false
+
+    return $null    # Brak błędów podczas tworzenia pliku lock koordynatora
+}
+
+# Usuwa plik lock koordynatora
+function Close-CoordinatorLockFile {
+
+    if ($BTCommon.CoordinatorLockFileHandle) {
+        try {
+            $BTCommon.CoordinatorLockFileHandle.Close()
+            $BTCommon.CoordinatorLockFileHandle.Dispose()
+            $BTCommon.CoordinatorLockFileHandle = $null
+            Remove-Item -Path $BTCommon.CoordinatorLockFile -Force -ErrorAction Stop
+        } catch {
+            $ExitResult_local=$BTCommonExitDefinitions.BTCommonCoordinatorUnlock
+            Write-LogError -LogMessage ("Close-CoordinatorLockFile: Unable to remove coordinator lock file >$($BTCommon.CoordinatorLockFile)<") -CallStackFrame:(Get-PSCallStack)[0] `
+                -ErrorRecord:$_ `
+                -ExitResult:$ExitResult_local `
+                -WriteToHost:$true
+            return $ExitResult_local
+        }
+        Write-Log -LogLine ("Close-CoordinatorLockFile: Removed coordinator lock file.") -WriteToHost:$false
+    }
+
+    return $null    # Brak błędów podczas usuwania pliku lock koordynatora
+}
+
+# Tworzy plik lock dla tej sesji
+function Open-SessionLockFile {
+    param(
+        [string]$Command    # Full path to the script associated with this session lock file
+    )
+
+    if ([string]::IsNullOrWhiteSpace($($BTCommon.SessionLockFile))) {
+        $ExitResult_local=$BTCommonExitDefinitions.BTCommonSessionLock
+        Write-LogError -LogMessage ("Open-SessionLockFile: BTCommon.SessionLockFile is empty.") -CallStackFrame:(Get-PSCallStack)[0] `
+            -ErrorRecord:$null `
+            -ExitResult:$ExitResult_local `
+            -WriteToHost:$true
+        return $ExitResult_local
+    } elseif ($BTCommon.SessionLockFileHandle) {
+        $ExitResult_local=$BTCommonExitDefinitions.BTCommonSessionLock
+        Write-LogError -LogMessage ("Open-SessionLockFile: Lock file already created by this session.") -CallStackFrame:(Get-PSCallStack)[0] `
+            -ErrorRecord:$null `
+            -ExitResult:$ExitResult_local `
+            -WriteToHost:$true
+        return $ExitResult_local
+    } else {
+        try {
+            $BTCommon.SessionLockFileHandle = [System.IO.File]::Open(
+                $BTCommon.SessionLockFile,
                 [System.IO.FileMode]::Create,
                 [System.IO.FileAccess]::ReadWrite,
                 [System.IO.FileShare]::Read
@@ -211,52 +433,52 @@ function CreateSessionLockFile {
                 "COMMAND=$Command",
                 "LOG=$($BTCommon.LogFile)"
             ) -join "`r`n"
-            $BTCommon.LockFileHandle.Write(
+            $BTCommon.SessionLockFileHandle.Write(
                 [Text.Encoding]::UTF8.GetBytes($LockFileContent),
                 0,
                 [Text.Encoding]::UTF8.GetByteCount($LockFileContent)
             )
 
-            $BTCommon.LockFileHandle.Flush()
+            $BTCommon.SessionLockFileHandle.Flush()
         } catch {
-            $ExitResult_local=$BTCommonExitDefinitions.BTCommonLock
-            Write-LogError -LogMessage ("CreateSessionLockFile: Unable to create lock file >$($BTCommon.LockFile)<") -CallStackFrame:(Get-PSCallStack)[0] `
+            $ExitResult_local=$BTCommonExitDefinitions.BTCommonSessionLock
+            Write-LogError -LogMessage ("Open-SessionLockFile: Unable to create lock file >$($BTCommon.SessionLockFile)<") -CallStackFrame:(Get-PSCallStack)[0] `
                 -ErrorRecord:$_ `
                 -ExitResult:$ExitResult_local `
                 -WriteToHost:$true
             return $ExitResult_local
         }
     }
-    Write-Log -LogLine ("CreateSessionLockFile: Created session lock file >"+($BTCommon.LockFile)+"<") -WriteToHost:$false    
+    Write-Log -LogLine ("Open-SessionLockFile: Created session lock file >"+($BTCommon.SessionLockFile)+"<") -WriteToHost:$false
 
-    return $null    # wyjście z funkcji CreateSessionLockFile, kod wyjścia $null oznacza brak błędów
+    return $null    # wyjście z funkcji Open-SessionLockFile, kod wyjścia $null oznacza brak błędów
 }
 
 # Usuwa plik lock dla tej sesji
-function RemoveSessionLockFile {
+function Close-SessionLockFile {
 
-    if ($BTCommon.LockFileHandle) {
+    if ($BTCommon.SessionLockFileHandle) {
         try {
-            $BTCommon.LockFileHandle.Close()
-            $BTCommon.LockFileHandle.Dispose()
-            $BTCommon.LockFileHandle = $null
-            Remove-Item -Path $BTCommon.LockFile -Force -ErrorAction Stop
+            $BTCommon.SessionLockFileHandle.Close()
+            $BTCommon.SessionLockFileHandle.Dispose()
+            $BTCommon.SessionLockFileHandle = $null
+            Remove-Item -Path $BTCommon.SessionLockFile -Force -ErrorAction Stop
         } catch {
-            $ExitResult_local=$BTCommonExitDefinitions.BTCommonUnlock
-            Write-LogError -LogMessage ("RemoveSessionLockFile: Unable to remove lock file >$($BTCommon.LockFile)<") -CallStackFrame:(Get-PSCallStack)[0] `
+            $ExitResult_local=$BTCommonExitDefinitions.BTCommonSessionUnlock
+            Write-LogError -LogMessage ("Close-SessionLockFile: Unable to remove lock file >$($BTCommon.SessionLockFile)<") -CallStackFrame:(Get-PSCallStack)[0] `
                 -ErrorRecord:$_ `
                 -ExitResult:$ExitResult_local `
                 -WriteToHost:$true
             return $ExitResult_local
         }
+        Write-Log -LogLine ("Close-SessionLockFile: Removed session lock file.") -WriteToHost:$false
     }
-    Write-Log -LogLine ("RemoveSessionLockFile: Removed session lock file.") -WriteToHost:$false    
 
-    return $null    # wyjście z funkcji RemoveSessionLockFile, kod wyjścia $null oznacza brak błędów
+    return $null    # wyjście z funkcji Close-SessionLockFile, kod wyjścia $null oznacza brak błędów
 }
 
 # Tworzy katalog tymczasowy dla sesji, jeśli nie został jeszcze utworzony
-function CreateSessionTemporaryDir {
+function Initialize-SessionTemporaryDirectory {
 
     if (-not $BTCommon.ProcessTempDirCreated) {
         # Pobranie unikalnego identyfikatora sesji w formacie {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}
@@ -267,23 +489,23 @@ function CreateSessionTemporaryDir {
             New-Item -ItemType Directory -Path $BTCommon.ProcessTempDir -ErrorAction Stop | Out-Null
             $BTCommon.ProcessTempDirCreated = $true
         } catch {
-            $ExitResult_local=$BTCommonExitDefinitions.BTCommonSessionTemp
-            Write-LogError -LogMessage ("CreateSessionTemporaryDir: Create ProcessTempDir >$($BTCommon.ProcessTempDir)<") -CallStackFrame:(Get-PSCallStack)[0] `
+            $ExitResult_local=$BTCommonExitDefinitions.BTCommonSessionTempDirCreate
+            Write-LogError -LogMessage ("Initialize-SessionTemporaryDirectory: Create ProcessTempDir >$($BTCommon.ProcessTempDir)<") -CallStackFrame:(Get-PSCallStack)[0] `
                 -ErrorRecord:$_ `
                 -ExitResult:$ExitResult_local `
                 -WriteToHost:$true
             return $ExitResult_local
         }
-       Write-Log -LogLine ("CreateSessionTemporaryDir: Created process temporary directory >"+($BTCommon.ProcessTempDir)+"<") -WriteToHost:$false -DebugLevel:$true
+       Write-Log -LogLine ("Initialize-SessionTemporaryDirectory: Created process temporary directory >"+($BTCommon.ProcessTempDir)+"<") -WriteToHost:$false -DebugLevel:$true
     } else {
-       Write-Log -LogLine ("CreateSessionTemporaryDir: Process temporary directory already created >"+($BTCommon.ProcessTempDir)+"<") -WriteToHost:$false -DebugLevel:$true
+       Write-Log -LogLine ("Initialize-SessionTemporaryDirectory: Process temporary directory already created >"+($BTCommon.ProcessTempDir)+"<") -WriteToHost:$false -DebugLevel:$true
     }
 
-    return $null    # wyjście z funkcji CreateSessionTemporaryDir, kod wyjścia $null oznacza brak błędów
+    return $null    # wyjście z funkcji Initialize-SessionTemporaryDirectory, kod wyjścia $null oznacza brak błędów
 }
 
 # Czyści katalog i pliki tymczasowe dla tej sesji
-function RemoveSessionTemporaryDir {
+function Remove-SessionTemporaryDirectory {
 
     if ( $BTCommon.ProcessTempDirCreated ) {
     
@@ -293,13 +515,13 @@ function RemoveSessionTemporaryDir {
 
             try {
                 Remove-Item -Path $BTCommon.ProcessTempDir -Recurse -Force -ErrorAction Stop
-                Write-Log -LogLine ("RemoveSessionTemporaryDir: Cleanup executed successfully at $Attempt attempt.") -WriteToHost:$false
+                Write-Log -LogLine ("Remove-SessionTemporaryDirectory: Cleanup executed successfully at $Attempt attempt.") -WriteToHost:$false
 
                 $Deleted = $true
                 break
             }
             catch {
-                Write-Log -LogLine ("RemoveSessionTemporaryDir: Cleanup attempt $Attempt/$Attempts failed: $($_.Exception.Message)") -WriteToHost:$false
+                Write-Log -LogLine ("Remove-SessionTemporaryDirectory: Cleanup attempt $Attempt/$Attempts failed: $($_.Exception.Message)") -WriteToHost:$false
 
                 if ($Attempt -lt $Attempts) {
                     Start-Sleep -Seconds 2
@@ -308,8 +530,8 @@ function RemoveSessionTemporaryDir {
         }
 
         if (-not $Deleted) {
-            $ExitResult_local=$BTCommonExitDefinitions.BTCommonCleanup
-            Write-LogError -LogMessage ("RemoveSessionTemporaryDir: Cleanup after $Attempts attempts.") -CallStackFrame:(Get-PSCallStack)[0] `
+            $ExitResult_local=$BTCommonExitDefinitions.BTCommonSessionTempDirRemove
+            Write-LogError -LogMessage ("Remove-SessionTemporaryDirectory: Cleanup after $Attempts attempts.") -CallStackFrame:(Get-PSCallStack)[0] `
                 -ErrorRecord:$null `
                 -ExitResult:$ExitResult_local `
                 -WriteToHost:$true
@@ -317,7 +539,7 @@ function RemoveSessionTemporaryDir {
         }
     }
 
-    return $null    # wyjście z funkcji RemoveSessionTemporaryDir, kod wyjścia $null oznacza brak błędów
+    return $null    # wyjście z funkcji Remove-SessionTemporaryDirectory, kod wyjścia $null oznacza brak błędów
 }
 
 # Zwraca aktualny czas w standardowym formacie znaczników czasu
@@ -564,10 +786,14 @@ Export-ModuleMember `
         'Exit-Pause', 
         'Write-Log',
         'Write-LogError',
-        'CreateSessionLockFile',
-        'RemoveSessionLockFile',
-        'CreateSessionTemporaryDir',
-        'RemoveSessionTemporaryDir',
+        'Get-ShutdownEventsSinceBoot',
+        'Test-ShutdownPending',
+        'Open-CoordinatorLockFile',
+        'Close-CoordinatorLockFile',
+        'Open-SessionLockFile',
+        'Close-SessionLockFile',
+        'Initialize-SessionTemporaryDirectory',
+        'Remove-SessionTemporaryDirectory',
         'Get-ElapsedDurationString', 
         'Format-ByteSizeString',
         'Get-Timestamp',

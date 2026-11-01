@@ -12,20 +12,19 @@
 /Tests/*
 !/Tests/README.md
 
-# ignore local working files; keep the Work README
-/Work/
-!/Work/
-/Work/*
-!/Work/README.md
+# ignore generated logs in Work; keep the directory placeholder
+/Work/logs/*
+!/Work/logs/.gitkeep
 
 # ignore the downloaded rclone distribution; keep its directory placeholder
 /Tools/Utilities/Rclone/*
 !/Tools/Utilities/Rclone/.gitkeep
 
-# ignore local example inputs; keep the source directory placeholder
+# ignore local example inputs in Examples; keep the source directory placeholder
 /Examples/Source/*
 !/Examples/Source/.gitkeep
-# ignore generated repository data and local config; keep directory placeholders
+
+# ignore generated repository data in Examples; keep directory placeholders
 /Examples/BTRepository/BackupData/backup-example-1/archive/*
 !/Examples/BTRepository/BackupData/backup-example-1/archive/.gitkeep
 /Examples/BTRepository/BackupData/backup-example-1/current/*

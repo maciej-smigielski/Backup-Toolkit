@@ -1,4 +1,4 @@
-# BT.Common
+﻿# BT.Common
 
 Shared PowerShell 5.1 module used by the core runtime tools and supporting utilities, including `BT-Backup`, `BT-Plan`, `BT-File-Credentials`, `BT-Mail-Credentials`, `BT-File-Get-Password`, `BT-Mail-Send`, and `BT-Rclone-Config`. It bundles common building blocks that scripts should not reimplement:
 
@@ -8,7 +8,8 @@ Shared PowerShell 5.1 module used by the core runtime tools and supporting utili
 - save and open file dialogs with caller-supplied titles and filters; the save dialog also accepts a default filename and both return the selected path or `$null` if canceled,
 - a New/Open/Close choice dialog with a caller-supplied title and prompt (`Select-NewOrOpenFile`),
 - a common timestamp format,
-- session lock and session temporary directory helpers,
+- helpers for reading shutdown events from the Windows System log and checking whether shutdown is pending,
+- session and coordinator lock helpers, plus session temporary directory helpers,
 - formatting helpers for elapsed time and byte size,
 - a controlled exit routine that respects the `NoPause` / non-interactive contract.
 
@@ -27,7 +28,9 @@ Part of the **Backup-Toolkit** — a PowerShell-based backup automation platform
 - turn any caught exception into a uniform `Error: (code)[file:line/…]` line via `Write-LogError`,
 - show a message dialog or prompt for a file path through shared Windows Forms helpers,
 - create timestamps in the common `yyyy-MM-dd HH:mm:ss` format with `Get-Timestamp`,
+- read shutdown events since boot with `Get-ShutdownEventsSinceBoot` and determine pending shutdown state with `Test-ShutdownPending`,
 - acquire and release a per-session lock file that records `PID`, `COMMAND` and `LOG`,
+- acquire and release a coordinator lock file derived from the lock directory name,
 - create and reliably clean up a per-session temporary directory (with retry),
 - format durations (`Get-ElapsedDurationString`) and byte sizes (`Format-ByteSizeString`) consistently across summary lines and logs,
 - exit with a stable exit code while honouring `NoPause` / `NonInteractive` (`Exit-Pause`).
@@ -49,6 +52,7 @@ The module does **not** manage backup semantics (rclone, plans, credentials); th
 ## Requirements
 
 - Windows PowerShell 5.1
+- Read access to the Windows System event log is required when using the shutdown event helpers.
 - Windows Forms is required when using the dialog helpers.
 - `Set-StrictMode -Version Latest` compatible callers (the module runs in strict mode itself)
 
@@ -64,14 +68,26 @@ The module exports a single `PSCustomObject` named `$BTCommon` that carries the 
 - `DebugMode` — enables `-DebugLevel` log lines; set by `Initialize-BTCommon`.
 - `DebugToConsole` — writes debug-level lines to the console; set by `Initialize-BTCommon`.
 - `ApplicationTitle` — title used by message dialogs requested through the logger; set by `Initialize-BTCommon`.
-- `LogDir`, `LogFile` — session log directory and file; set by the consumer script.
+- `LogDir` — session log directory; set by the consumer script.
+- `LogFile` — session log file; set by the consumer script.
 - `MailBody` — accumulated `Segment`/`Line` entries for the outgoing mail; filled by `Write-Log`.
-- `LockDir`, `LockFile` — session lock directory and file path; set by the consumer script.
-- `LockFileHandle` — open handle held while the lock is active; set by `CreateSessionLockFile`.
+- `LockDir` — session lock directory; set by the consumer script.
+- `SessionLockFile` — session lock file path; set by the consumer script.
+- `SessionLockFileHandle` — open handle held while the session lock is active; set by `Open-SessionLockFile`.
+- `CoordinatorLockFile` — coordinator lock file path; derived from `LockDir` by `Open-CoordinatorLockFile`.
+- `CoordinatorLockFileHandle` — open handle held while the coordinator lock is active; set by `Open-CoordinatorLockFile`.
 - `TempDir` — parent temp directory; set by the consumer script.
-- `ProcessTempDir`, `ProcessTempDirCreated` — per-session temp folder and its created flag; set by `CreateSessionTemporaryDir`.
+- `ProcessTempDir`, `ProcessTempDirCreated` — per-session temp folder and its created flag; set by `Initialize-SessionTemporaryDirectory`.
 
 `$BTCommon` is exported by `Export-ModuleMember -Variable BTCommon`, so all assignments in a consumer script mutate the module's own state.
+
+---
+
+## Lock Files
+
+The session lock path is supplied by the consumer in `SessionLockFile`. `Open-SessionLockFile` writes `PID`, `COMMAND` and `LOG`, then keeps the file open with `FileShare.Read`; `Close-SessionLockFile` closes the handle and deletes the file.
+
+The coordinator lock is separate. `Open-CoordinatorLockFile` derives its filename from the leaf name of `LockDir`, prefixes it with a dot, and places it inside `LockDir`. It writes the same metadata and keeps the file open with `FileShare.Read`; `Close-CoordinatorLockFile` closes the handle and deletes it.
 
 ---
 
@@ -81,12 +97,16 @@ The module publishes a hashtable of exit codes it may raise from its helpers:
 
 | Key | Code | Message |
 | --- | --- | --- |
-| `BTCommonLock` | 801 | Lock process failed |
-| `BTCommonUnlock` | 802 | Unlock process failed |
-| `BTCommonSessionTemp` | 803 | Temporary directory creation failed |
-| `BTCommonCleanup` | 804 | Temporary directory cleanup failed |
+| `BTCommonCoordinatorLock` | 801 | Coordinator lock process failed |
+| `BTCommonCoordinatorUnlock` | 802 | Coordinator unlock process failed |
+| `BTCommonSessionLock` | 803 | Session lock process failed |
+| `BTCommonSessionUnlock` | 804 | Session unlock process failed |
+| `BTCommonSessionTempDirCreate` | 805 | Temporary directory creation failed |
+| `BTCommonSessionTempDirRemove` | 806 | Temporary directory cleanup failed |
+| `BTCommonShutdownStarted` | 807 | Operating system is shutting down |
+| `BTCommonShutdownPending` | 808 | Operating system shutdown is pending |
 
-Every helper function returns `$null` on success or one of these definitions on failure. Consumer scripts propagate the returned object into their own exit / error handling.
+Lock and temporary-directory helpers return `$null` on success or one of these definitions on failure. `Test-ShutdownPending` returns `$null` when no shutdown is pending, otherwise `BTCommonShutdownStarted` or `BTCommonShutdownPending`. Consumer scripts propagate the returned object into their own exit / error handling.
 
 ---
 
@@ -96,10 +116,14 @@ Every helper function returns `$null` on success or one of these definitions on 
 - `Exit-Pause` — exits the script with the given code, pausing for Enter only when `$BTCommon.NoPause -eq $false`.
 - `Write-Log` — writes one line to any combination of host, log file and mail body, with an optional debug level and `-ShowDialogBox` option. A `-DebugLevel` line reaches the console only when both `DebugMode` and `DebugToConsole` are enabled.
 - `Write-LogError` — builds a uniform error / warning line (with call-stack and optional exit code), forwards it to `Write-Log`, and supports `-ShowDialogBox`.
-- `CreateSessionLockFile` — creates the session lock file with `PID`, `COMMAND` and `LOG`, and keeps the handle open.
-- `RemoveSessionLockFile` — releases the handle and deletes the session lock file.
-- `CreateSessionTemporaryDir` — creates a per-session `<TempDir>/{GUID}` folder.
-- `RemoveSessionTemporaryDir` — deletes the per-session temp folder, retrying on transient failures.
+- `Get-ShutdownEventsSinceBoot` — reads Windows System log events since the last boot: shutdown requests (1074), cancellations (1075), and shutdown-start events (13). Returns objects with `RecordId`, `TimeCreated`, `Id`, `Description`, and `Message`, and writes diagnostic details through `Write-Log`.
+- `Test-ShutdownPending` — returns `$null` when no shutdown is pending; returns `BTCommonShutdownStarted` if shutdown has started (event 13), or `BTCommonShutdownPending` if the latest shutdown request (event 1074) has not been followed by a cancellation (event 1075).
+- `Open-CoordinatorLockFile` — derives and creates the coordinator lock file in `LockDir`, retrying up to 30 times at one-second intervals; logs the successful attempt number, writes `PID`, `COMMAND` and `LOG`, and keeps its handle open.
+- `Close-CoordinatorLockFile` — releases the coordinator lock handle and deletes the coordinator lock file.
+- `Open-SessionLockFile` — creates the session lock file with `PID`, `COMMAND` and `LOG`, and keeps the handle open.
+- `Close-SessionLockFile` — releases the handle and deletes the session lock file.
+- `Initialize-SessionTemporaryDirectory` — creates a per-session `<TempDir>/{GUID}` folder.
+- `Remove-SessionTemporaryDirectory` — deletes the per-session temp folder, retrying on transient failures.
 - `Get-ElapsedDurationString` — formats an elapsed time as a compact `d h m s` string.
 - `Format-ByteSizeString` — formats a byte count as `B`, `KiB`, `MiB`, `GiB` or `TiB`.
 - `Get-Timestamp` — returns the current time as `yyyy-MM-dd HH:mm:ss`.
@@ -115,7 +139,7 @@ Every helper function returns `$null` on success or one of these definitions on 
 
 `Export-ModuleMember` declares the public surface explicitly:
 
-- **Functions**: `Initialize-BTCommon`, `Exit-Pause`, `Write-Log`, `Write-LogError`, `CreateSessionLockFile`, `RemoveSessionLockFile`, `CreateSessionTemporaryDir`, `RemoveSessionTemporaryDir`, `Get-Timestamp`, `Get-ElapsedDurationString`, `Format-ByteSizeString`, `Show-MessageDialog`, `Show-ConfirmationDialog`, `Show-SaveFileDialog`, `Show-OpenFileDialog`, `Select-NewOrOpenFile`.
+- **Functions**: `Initialize-BTCommon`, `Exit-Pause`, `Write-Log`, `Write-LogError`, `Get-ShutdownEventsSinceBoot`, `Test-ShutdownPending`, `Open-CoordinatorLockFile`, `Close-CoordinatorLockFile`, `Open-SessionLockFile`, `Close-SessionLockFile`, `Initialize-SessionTemporaryDirectory`, `Remove-SessionTemporaryDirectory`, `Get-Timestamp`, `Get-ElapsedDurationString`, `Format-ByteSizeString`, `Show-MessageDialog`, `Show-ConfirmationDialog`, `Show-SaveFileDialog`, `Show-OpenFileDialog`, `Select-NewOrOpenFile`.
 - **Variables**: `BTCommon`, `BTCommonExitDefinitions`.
 
 Members not on these lists (e.g. internal helpers, `$BTCommonExitDefinitions` keys used only inside the module) are inaccessible from the consumer scope.
@@ -142,7 +166,7 @@ Members not on these lists (e.g. internal helpers, `$BTCommonExitDefinitions` ke
 - `Write-Log` swallows nothing — it only writes; failures on `Add-Content` propagate to the caller.
 - Log lines carry a `yyyy-MM-dd HH:mm:ss:` timestamp prefix.
 - The mail body stores raw lines and lets `BT-Mail-Send` decide on formatting.
-- Retry logic in `RemoveSessionTemporaryDir` is intentional — files in the temp directory may still be transiently held after use (for example, an attachment file after `Send-MailMessage` completes or fails, or files being scanned by antivirus or a sync client).
+- Retry logic in `Remove-SessionTemporaryDirectory` is intentional — files in the temp directory may still be transiently held after use (for example, an attachment file after `Send-MailMessage` completes or fails, or files being scanned by antivirus or a sync client).
 - No function opens files with `FileShare.None` — the lock file is intentionally readable while held so operators can inspect `PID`, `COMMAND`, `LOG` of a running session.
 
 ---

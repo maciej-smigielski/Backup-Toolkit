@@ -57,7 +57,7 @@ No network access is required by `BT-Plan` itself; individual `BT-Backup` runs m
 6. Optionally loads mail credentials and split the `mail_to` address list.
 7. Validates every job: checks that `backup_data` exists, that the per-Backup `<backup_name>/<backup_name>.BT-Backup` config exists, and that `run_days` has the correct format.
 8. Computes the ISO weekday number (1–7) and marks each job as *scheduled* if its `run_days` contains the current day.
-9. Acquires the session lock file (via `CreateSessionLockFile`).
+9. Acquires the coordinator lock (`Open-CoordinatorLockFile`), checks for a pending or ongoing system shutdown (`Test-ShutdownPending`), and acquires the session lock (`Open-SessionLockFile`) only if the check succeeds. Releases the coordinator lock (`Close-CoordinatorLockFile`) before continuing.
 10. For each job whose status is still *NotProcessed*:
     - Skips it if it is not scheduled and none of `-RunAll`, `-RunJob`, `-ValidateJobs`, `-DryRun` overrides it.
     - Invokes `BT-Backup.ps1` with `-FromPlan` and, when applicable, `-ValidateOnly`, `-DryRun` or `-NoMail`.
@@ -68,6 +68,14 @@ No network access is required by `BT-Plan` itself; individual `BT-Backup` runs m
 13. Removes the session temp directory and the session lock file.
 14. Exits via `Exit-Pause` with the single or aggregated exit code (see [Exit codes](#exit-codes)).
 
+### Startup safeguards
+
+After plan and job configuration validation, `BT-Plan` checks Windows shutdown events recorded since the last boot via [BT.Common](./BT.Common.md). An ongoing shutdown produces `BTCommonShutdownStarted` (`807`); a shutdown request without a later cancellation produces `BTCommonShutdownPending` (`808`). Either condition prevents session lock acquisition and job execution; reporting and cleanup still follow the normal error path.
+
+The coordinator lock is `<lock_path>/.<lock-directory-name>` (for example, `Locks/.Locks`). It serializes the shutdown check and session lock acquisition for processes using the same lock directory. It is released after this startup sequence, including when the shutdown check or session lock acquisition fails; the separate session lock remains open until session cleanup. Coordinator lock acquisition uses up to 30 attempts with one-second intervals.
+
+These safeguards also apply under `-ValidateOnly`, `-ValidateJobs`, and `-DryRun`. The plan checks shutdown once during its own startup, not continuously during job execution. Each invoked `BT-Backup` performs its own startup check before proceeding.
+
 ---
 
 ## Parameters
@@ -76,7 +84,7 @@ The parameter block is a `CmdletBinding()` script param, so PowerShell binding r
 
 ### `-ConfigFile <path>`
 
-**Required.** Path to the `.BT-Plan` configuration file. The extension must be `.BT-Plan` (case-insensitive) and the file's base name must match `bt-plan.plan_name` inside the TOML.
+**Required.** Path to the `.BT-Plan` configuration file. The extension must be `.BT-Plan` (case-insensitive), the file's base name must match `bt-plan.plan_name` inside the TOML, must not contain spaces or start with a dot.
 
 ### `-LogPath <path>`
 
@@ -135,7 +143,7 @@ Optional section.
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `temp_path` | string | `%TEMP%` | Parent folder for the session temp directory. Environment variables are expanded. |
-| `lock_path` | string | folder of the `.BT-Plan` file | Folder in which the session lock file `BT-Plan_<plan_name>.lock` is created. |
+| `lock_path` | string | folder of the `.BT-Plan` file | Folder for the session lock `BT-Plan_<plan_name>.lock` and the startup coordinator lock `.<lock-directory-name>`. Processes must use the same folder to share the coordinator lock. |
 
 ### `[mail]`
 
@@ -209,7 +217,7 @@ The task should run with an account that has access to the plan configuration, b
 | `142` | `MailCredentials` | Loading or decoding the `.BT-Mail-Credentials` password failed. |
 | `143` | `MailSend` | `Send-MailMessage` failed. |
 
-Additionally, the shared codes `801`–`804` from `BT.Common` may bubble up (`BTCommonLock`, `BTCommonUnlock`, `BTCommonSessionTemp`, `BTCommonCleanup`).
+Additionally, the shared codes `801`–`808` from `BT.Common` may bubble up (`BTCommonCoordinatorLock`, `BTCommonCoordinatorUnlock`, `BTCommonSessionLock`, `BTCommonSessionUnlock`, `BTCommonSessionTempDirCreate`, `BTCommonSessionTempDirRemove`, `BTCommonShutdownStarted`, `BTCommonShutdownPending`).
 
 ---
 
@@ -233,7 +241,7 @@ For internal reporting each job has a *final status* that ends up in the mail su
 | Component | Relationship |
 | --- | --- |
 | [BT-Backup](./BT-Backup.md) | Executed once per job, with `-FromPlan` and the relevant switches. Its control records (`@FLAGS@`, `@ATTACHMENT@BTBACKUP@`, `@ATTACHMENT@RCLONE@`, `@BODY@`) feed the mail summary. |
-| [BT.Common](./BT.Common.md) | Provides `Initialize-BTCommon`, `Write-Log` / `Write-LogError`, `CreateSessionLockFile` / `RemoveSessionLockFile`, `CreateSessionTemporaryDir` / `RemoveSessionTemporaryDir`, `Get-ElapsedDurationString`, and `Exit-Pause`. |
+| [BT.Common](./BT.Common.md) | Provides runtime initialization, logging, startup shutdown checks, coordinator and session locking, session temporary directory management, formatting helpers, and controlled exit. |
 | PSToml | Parses the `.BT-Plan` TOML file (`ConvertFrom-Toml` / `ConvertTo-Toml`). |
 | [BT-Plan-Schedule](./BT-Plan-Schedule.md) | Registers a Windows scheduled task that launches `BT-Plan.ps1` directly through `powershell.exe` with the configured `.BT-Plan` file and `--NoPause`. |
 | [BT-Mail-Credentials](./BT-Mail-Credentials.md) | Source of the DPAPI-protected credentials referenced by `mail.mail_credentials`. |
@@ -247,7 +255,7 @@ For internal reporting each job has a *final status* that ends up in the mail su
 - `-ValidateOnly` skips job execution and mail entirely; `-ValidateJobs` still invokes `BT-Backup` but in its own validate-only mode and suppresses mail.
 - Job order in the plan is preserved on output and in the mail table.
 - The mail body is HTML; log lines are stored raw in `$BTCommon.MailBody` and the plan's control records are HTML-encoded before rendering.
-- The ZIP attachment is written inside the session temp directory and cleaned up by `RemoveSessionTemporaryDir`; transient locks on the ZIP (antivirus, sync clients, `Send-MailMessage` finalization) are handled by that helper's retry loop.
+- The ZIP attachment is written inside the session temp directory and cleaned up by `Remove-SessionTemporaryDirectory`; transient locks on the ZIP (antivirus, sync clients, `Send-MailMessage` finalization) are handled by that helper's retry loop.
 - Special output lines from `BT-Backup` (`@…@`) are consumed by `BT-Plan` and are **not** printed to the plan log verbatim; regular stdout lines are echoed to the console but only recorded in the plan log at debug level.
 - The lock file is opened with `FileShare.Read`, so an operator can inspect `PID`, `COMMAND` and `LOG` of a running plan while it is executing.
 

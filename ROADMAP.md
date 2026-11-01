@@ -47,7 +47,7 @@ Status markers used per item:
 - [?] Support rclone `crypt` remotes for backup sources and destinations.
 - [?] Sending mail when running with `-ValidateOnly` / `-ValidateJobs`.
 - [ ] Move shared `BT-Plan-Schedule` functions into a library.
-- [ ] Coordinate locking between `BT-Backup` and `BT-Shutdown`, including the case where a backup starts exactly as shutdown begins.
+- [ ] Coordinate locking between `BT-Backup` and `BT-Shutdown`, case where a backup starts exactly as `BT-Shutdown` begins.
 - [ ] Move variable initialization from `BTCommon` script bootstrap into the `BT.Common` library.
 - [ ] Move mail handling into the `BT.Common` library.
 - [ ] Move credential handling into a shared library.
