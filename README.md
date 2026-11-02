@@ -96,6 +96,6 @@ operations, but does not permit distribution. This is a source-available license
 not an open-source license. See [Licensing](LICENSING.md) for scope, restrictions,
 and third-party license information.
 
-## Project Repository
+## About Backup-Toolkit
 
-Visit the [Backup-Toolkit repository on GitHub](https://github.com/maciej-smigielski/Backup-Toolkit) for the source code, project history, and releases.
+Backup-Toolkit is a project by [Maciej Śmigielski](https://github.com/maciej-smigielski). Visit the [Backup-Toolkit repository on GitHub](https://github.com/maciej-smigielski/Backup-Toolkit) for the source code, project history, and releases.

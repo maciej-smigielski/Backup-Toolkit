@@ -12,7 +12,7 @@
 RootModule = 'BT.Common.psm1'
 
 # Version number of this module.
-ModuleVersion = '26.11.01.2'
+ModuleVersion = '26.11.02.0'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()

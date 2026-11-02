@@ -3,7 +3,7 @@
 REM -------------------------------
 REM NAME: Start-BackupToolkitShell.cmd
 REM AUTHOR: Maciej-Smigielski
-REM VERSION: 26.11.01.2
+REM VERSION: 26.11.02.0
 REM -------------------------------
 
 setlocal
